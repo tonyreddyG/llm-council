@@ -12,8 +12,28 @@ wheels/
 # Keys and secrets
 .env
 
-# Data files
+# SSL Certificates and Keys
+certs/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+*.cer
+cert.pem
+key.pem
+
+# Data files and User Data
 data/
+data/users.json
+data/conversations/
+tests/runtime/
+test_data/
+test_data_session/
+users.json
+*.db
+*.sqlite
+*.sqlite3
 
 # Frontend
 frontend/node_modules/

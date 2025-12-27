@@ -1,19 +1,68 @@
 import { useState, useEffect } from 'react';
 import Sidebar from './components/Sidebar';
 import ChatInterface from './components/ChatInterface';
+import Login from './components/Login';
 import { api } from './api';
 import './App.css';
 
 function App() {
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const [user, setUser] = useState(null);
+  const [authChecking, setAuthChecking] = useState(true);
   const [conversations, setConversations] = useState([]);
   const [currentConversationId, setCurrentConversationId] = useState(null);
   const [currentConversation, setCurrentConversation] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
 
-  // Load conversations on mount
+  // Check auth on mount
   useEffect(() => {
-    loadConversations();
+    checkAuthStatus();
   }, []);
+
+  // Auto-refresh token every 50 minutes (if authenticated)
+  useEffect(() => {
+    let interval;
+    if (isAuthenticated) {
+      interval = setInterval(() => {
+        console.log("Refreshing session...");
+        api.refreshToken();
+      }, 50 * 60 * 1000); // 50 mins
+    }
+    return () => clearInterval(interval);
+  }, [isAuthenticated]);
+
+  const checkAuthStatus = async () => {
+    try {
+      const userData = await api.checkAuth();
+      setIsAuthenticated(!!userData);
+      setUser(userData);
+      setAuthChecking(false);
+      if (userData) {
+        loadConversations();
+      }
+    } catch (error) {
+      setIsAuthenticated(false);
+      setUser(null);
+      setAuthChecking(false);
+    }
+  };
+
+  const handleLogout = async () => {
+    try {
+      await api.logout();
+    } catch (error) {
+      console.error('Logout error:', error);
+    }
+    setIsAuthenticated(false);
+    setUser(null);
+    setConversations([]);
+    setCurrentConversationId(null);
+    setCurrentConversation(null);
+  };
+
+  const handleLoginSuccess = () => {
+    checkAuthStatus();
+  };
 
   // Load conversation details when selected
   useEffect(() => {
@@ -27,6 +76,10 @@ function App() {
       const convs = await api.listConversations();
       setConversations(convs);
     } catch (error) {
+      if (error.message === 'Unauthorized') {
+        setIsAuthenticated(false);
+        setUser(null);
+      }
       console.error('Failed to load conversations:', error);
     }
   };
@@ -36,6 +89,10 @@ function App() {
       const conv = await api.getConversation(id);
       setCurrentConversation(conv);
     } catch (error) {
+      if (error.message === 'Unauthorized') {
+        setIsAuthenticated(false);
+        setUser(null);
+      }
       console.error('Failed to load conversation:', error);
     }
   };
@@ -49,12 +106,32 @@ function App() {
       ]);
       setCurrentConversationId(newConv.id);
     } catch (error) {
+      if (error.message === 'Unauthorized') {
+        setIsAuthenticated(false);
+        setUser(null);
+      }
       console.error('Failed to create conversation:', error);
     }
   };
 
   const handleSelectConversation = (id) => {
     setCurrentConversationId(id);
+  };
+
+  const handleDeleteConversation = async (conversationId) => {
+    try {
+      await api.deleteConversation(conversationId);
+      // Refresh conversations list
+      await loadConversations();
+      // If we deleted the current conversation, clear it
+      if (conversationId === currentConversationId) {
+        setCurrentConversationId(null);
+        setCurrentConversation(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete conversation:', error);
+      alert('Failed to delete conversation: ' + error.message);
+    }
   };
 
   const handleSendMessage = async (content) => {
@@ -181,6 +258,18 @@ function App() {
     }
   };
 
+  const handleUserUpdate = (newUsername) => {
+    setUser(prev => ({ ...prev, username: newUsername }));
+  };
+
+  if (authChecking) {
+    return <div className="app loading">Loading...</div>;
+  }
+
+  if (!isAuthenticated) {
+    return <Login onLogin={handleLoginSuccess} />;
+  }
+
   return (
     <div className="app">
       <Sidebar
@@ -188,6 +277,10 @@ function App() {
         currentConversationId={currentConversationId}
         onSelectConversation={handleSelectConversation}
         onNewConversation={handleNewConversation}
+        onDeleteConversation={handleDeleteConversation}
+        user={user}
+        onLogout={handleLogout}
+        onUserUpdate={handleUserUpdate}
       />
       <ChatInterface
         conversation={currentConversation}
